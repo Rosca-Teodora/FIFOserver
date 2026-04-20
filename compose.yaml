@@ -1,0 +1,23 @@
+services:
+  server:
+    build:
+      context: .
+    command: ["/app/server.sh"]
+    volumes:
+      - ./configServer.conf:/app/configServer.conf:ro
+      - fifo-data:/tmp
+
+  client:
+    build:
+      context: .
+    command: ["/app/client.sh"]
+    stdin_open: true
+    tty: true
+    depends_on:
+      - server
+    volumes:
+      - ./configServer.conf:/app/configServer.conf:ro
+      - fifo-data:/tmp
+
+volumes:
+  fifo-data:

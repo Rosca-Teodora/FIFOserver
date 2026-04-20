@@ -1,140 +1,120 @@
-# ITBI-FIFOserver
+# FIFO Server
 
-## Introducere 
+## Descriere
 
-Acest proiect implementează un sistem client-server în Linux utilizând limbajul Bash și fișiere FIFO (First In, First Out) drept canale de comunicare între clienți și server. Scopul proiectului este să faciliteze accesul la informațiile din paginile de manual ale comenzilor Linux. 
+Acest proiect implementeaza o arhitectura client-server in Bash, bazata pe FIFO-uri (named pipes), pentru interogarea paginilor de manual Linux (`man`).
 
-## Specificații tehnice 
+Clientul trimite o cerere catre server printr-un FIFO bine-cunoscut, iar serverul returneaza raspunsul intr-un FIFO dedicat clientului.
 
-- Fișierul FIFO bine-cunoscut (well-known FIFO) 
-- Serverul utilizează un fișier FIFO cu un nume bine-cunoscut pentru a primi cererile clienților. 
+## Obiective
 
-- Locația și numele acestui fișier FIFO sunt configurabile printr-un fișier de configurare. 
+- Demonstrarea comunicarii inter-proces (IPC) folosind FIFO-uri.
+- Separarea clara a rolurilor client/server.
+- Configurarea parametrilor serverului prin fisier extern.
+- Gestionarea concurenta a cererilor, prin FIFO-uri de raspuns per client.
 
-## Structura cererilor clientului 
+## Arhitectura
 
-Cererile clienților au următorul format: 
+Componente principale:
 
-    BEGIN-REQ (client-pid: command-name) END-REQ 
+- `server.sh`: porneste serverul, primeste cereri, parseaza formatul, ruleaza `man`, trimite raspunsul.
+- `client.sh`: construieste cererea, o trimite serverului, asteapta raspunsul in FIFO-ul propriu.
+- `configServer.conf`: defineste FIFO-ul bine-cunoscut (ex. `/tmp/server-fifo`).
 
-unde avem:
-- client-pid: ID-ul de proces al clientului. 
-- command-name: Numele comenzii Linux pentru care se dorește informația din pagina de manual. 
+Flux de comunicare:
 
-## Comportamentul serverului 
+1. Clientul creeaza FIFO-ul propriu: `/tmp/server-reply-<PID>`.
+2. Clientul trimite cererea in FIFO-ul serverului.
+3. Serverul valideaza cererea si extrage PID + comanda.
+4. Serverul scrie rezultatul `man <command>` in FIFO-ul clientului.
+5. Dupa citire, FIFO-ul clientului este sters.
 
-- Primirea cererilor 
-- Serverul citește cererile clienților din FIFO-ul bine-cunoscut. 
-- Prelucrarea cererii 
-- Serverul extrage din cerere PID-ul clientului și numele comenzii. 
-- Apelează comanda man command-name pentru a obține informațiile din pagina de manual. 
-- Transmiterea răspunsului 
-- Serverul creează un fișier FIFO personalizat pentru fiecare client, conform formatului: ```/tmp/server-reply-ZZZZ ``` ( Unde ZZZZ reprezintă PID-ul ) clientului. 
-- Răspunsul (conținutul paginii de manual) este transmis prin acest fișier FIFO personalizat. 
+## Formatul cererii
 
-## Comportamentul clientului 
-Clientul creează cererea conform formatului specificat și o trimite serverului prin FIFO-ul bine-cunoscut.  Acesta așteaptă răspunsul în fișierul FIFO personalizat creat de server. După ce conținutul paginii de manual este afișat pe ecran, clientul șterge fișierul FIFO personal. 
+Cererile sunt trimise in formatul:
 
-## Dificultăți întâmpinate: 
-
-- Utilizarea mecanismelor Pipe 
-- Gestionarea fișierelor FIFO 
-- Încărcarea fișierului de configurare 
-
-## Explicarea codului: 
-
-1.server.sh 
-```sh
-#!/bin/bash 
-source configServer.conf	 
-```
-Incarcă și execută conținutul fișierului configServer.conf în aceași sesiune de shell ca script-ul principal, astfel variabilele, funcțiile și alte resurse definite în fișier devin disponibile imediat în script-ul prinicipal, fără a fi nevoie de alta configurare. De asemenea tot conținutul fișierului poate fi folosit în mai multe script-uri pentru variabile sau pentru funcții. Așadar, citește variabilele de configurare din fișier și permite folosirea acestora în script-ul curent.  
-```sh
-if [[ ! -p $fifoServer ]]; then				 
-```
-Verifică dacă server-ul nu există, caz în care îl creeaza, -p verifică dacă un fișier este un FIFO (named pipe), necesar pentru comunicarea între doua procese care rulează independent pe sistemul de operare. În cazul de față, permite schimbul de mesaje între server și client. Față de un pipe obișnuit, un FIFO facilitează sincronizarea mesajelor: Clientul scrie, mesajul intră în FIFO, server-ul citește, preia mesajul și îl procesează. FIFO blochează scrierea sau citirea dacă unul dintre procese nu este pregătit, prevenind pierderea datelor.	 
-```sh
-mkfifo  $fifoServer 
-
-fi 
-
-echo "Serverul este pornit pe $fifoServer..." 
-
-while true; do	
-```	
-Menține server-ul activ pentru a procesa cereri continuu printr-o buclă infinită 
-```sh
-if read -r cerere <  $fifoServer; then 
-```
-Citește cererea trimisă de client pe server, se folosește –r pentru a preveni interpretarea caracterelor speciale 
-```sh
-if [[ $cerere =~ BEGIN-REQ\ \[([0-9]+):\ ([a-zA-Z0-9_-]+)\]\ END-REQ ]]; then 
-```
-Validarea și parsarea cererii, și extragerea PID-ului clientului și a numelui comenzii solicitate 
-```sh
-clientPid="${BASH_REMATCH[1]}" 
-commandName="${BASH_REMATCH[2]}" 
-clientFifo="/tmp/server-reply-$clientPid" 
-```
-Extragerea variabelelor (PID-ul clientului, numele comenzii, FIFO-ul de reply pentru client 
-```sh
-echo "Cerere primita de la PID=$clientPid pentru comanda '$commandName'." 
-```
-Afișarea pe ecran a confirmării înregistrării cererii 
-```sh
-if [[ ! -p $clientFifo ]]; then  
-        mkfifo $clientFifo 
-fi 
-```
-Crearea Fifo-ului in cazul in care nu exista.
-```sh
-man "$commandName" > "$clientFifo" 	
-```                 
-Rulează comanda man pentru comanda cerută și scrie rezultatul în FIFO-ul clientului 
-```sh
-rm -f $clientFifo
-```									 
-Șterge FIFO-ul clientului după ce răspunsul a fost trimis. Evită acumularea de fișiere temporare 							 
-```sh
-rm $fifoServer 
-```
-Șterge FIFO-ul server-ului la închiderea scriptului pentru a preveni fișierele rămase 
-
-1.client.sh 
-```sh
-if [[ ! -p $fifoServer ]]; then 
-    echo "Eroare: FIFO-ul serverului nu există!" 
-    exit 1 
-fi 
-```
-Verifică dacă FIFO-ul ($fifoServer) există și este valid, în caz contrar afișând un mesaj de eroare și terminând execuția script-ului. 
-```sh
-clientPid=$$ 
-```
-Variabila specială $$ reține PID-ul (Process ID) procesului curent. este folosit pentru a crea un FIFO unic pentru acest client. 
-```sh
-clientFifo="/tmp/server-reply-$clientPid" 
-mkfifo $clientFifo 
+```text
+BEGIN-REQ [client-pid: command-name] END-REQ
 ```
 
-definește un FIFO temporar, unic pentru client, folosind PID-ul său și îl creează cu mkfifo 
-```sh
-echo "Introdu o comanda: " 
-read commandName 
-cere comanda de la utilizator 
-cerere="BEGIN-REQ [$clientPid: $commandName] END-REQ" 
+Unde:
+
+- `client-pid`: PID-ul procesului client.
+- `command-name`: comanda Linux pentru care se cere pagina de manual.
+
+## Cerinte
+
+- Sistem Linux (sau mediu compatibil POSIX).
+- Bash.
+- Utilitare standard: `mkfifo`, `cat`, `man`.
+
+## Configurare
+
+Fisierul `configServer.conf` contine calea FIFO-ului serverului:
+
+```conf
+fifoServer=/tmp/server-fifo
 ```
-formateaza cererea ce urmeaza să fie trimisă server-ului 
-```sh
-echo "$cerere" > $fifoServer 
-echo "Cererea a fost trimisă serverului: $cerere" 
+
+## Rulare
+
+1. Acorda drepturi de executie:
+
+```bash
+chmod +x server.sh client.sh
 ```
-Trimite mesajul format în FIFO-ul serverulu și afișează un mesaj de confirmare că cererea a fost trimisă. 
-```sh
-cat $clientFifo 
+
+2. Porneste serverul intr-un terminal:
+
+```bash
+./server.sh
 ```
-Scriptul citește răspunsul de la server din FIFO-ul personalizat al clientului ($clientFifo). Comanda cat blochează execuția până când serverul scrie un răspuns în FIFO. 
-```sh
-rm -f $clientFifo 
+
+3. Ruleaza clientul intr-un alt terminal:
+
+```bash
+./client.sh
 ```
-Șterge FIFO-ul personalizat pentru a evita fișierele temporare inutile. 
+
+4. Introdu o comanda Linux (ex. `ls`, `grep`, `ps`) cand este solicitata.
+
+## Exemplu de utilizare
+
+Input client:
+
+```text
+ls
+```
+
+Cerere transmisa:
+
+```text
+BEGIN-REQ [12345: ls] END-REQ
+```
+
+Raspuns:
+
+- Continutul paginii de manual pentru comanda solicitata (`man ls`).
+
+## Gestionarea erorilor
+
+- Clientul verifica existenta FIFO-ului serverului inainte de trimiterea cererii.
+- Serverul valideaza formatul cererii prin expresie regulata.
+- FIFO-urile client sunt sterse dupa finalizarea comunicarii.
+
+## Limitari curente
+
+- Serverul ruleaza intr-o bucla infinita (fara mecanism de shutdown controlat).
+- Nu exista timeout pentru citire/scriere pe FIFO.
+- Nu sunt tratate explicit erorile comenzii `man` (ex. comanda inexistenta).
+
+## Posibile imbunatatiri
+
+- Adaugarea unui mecanism de oprire gratiata (semnale `SIGINT`/`SIGTERM`).
+- Introducerea timeout-urilor pentru operatiile FIFO.
+- Logging structurat pentru cereri si erori.
+- Validare extinsa si mesaje de eroare mai descriptive catre client.
+
+## Containerizare
+
+Pentru rulare prin Docker, vezi documentatia din `README.Docker.md`.
