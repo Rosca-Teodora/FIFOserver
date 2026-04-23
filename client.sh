@@ -26,7 +26,4 @@ echo "Cererea a fost trimisă serverului: $cerere"
 # asteapta raspunsul de la sv
 cat $clientFifo
 
-# sterge fifo ul 
-rm -f $clientFifo
-
 exit 0

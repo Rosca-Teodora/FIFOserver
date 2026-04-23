@@ -25,12 +25,12 @@ while true; do
 			if [[ ! -p $clientFifo ]]; then
             			mkfifo $clientFifo
 			fi
-
-            		# generează raspunsul și il scrie în fifo
-            		man "$commandName" > "$clientFifo"
-            		
-			# sterge fifo clientului
-            		rm -f $clientFifo
+					( # fork pentru proces ca sa poata rula concurrently 
+						# genereaza raspunsul si il scrie in fifo
+						man "$commandName" > "$clientFifo"
+						# sterge fifo clientului
+						rm -f $clientFifo
+					) &
 		fi
    	 fi
 done
